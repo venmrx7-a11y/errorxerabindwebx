@@ -18,6 +18,7 @@ BOT_TOKEN = "8942532097:AAFWVLTYYgOnp-1aIUdOFYql1bHXhN4sey4"
 ACCESS_KEY = "ERROR-X-OWNER"
 ADMIN_KEY = "ERROR-X-ADMIN"
 
+# ============ MODELS ============
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     display_id = db.Column(db.Integer, unique=True, nullable=False)
@@ -37,6 +38,7 @@ class BannedIP(db.Model):
 with app.app_context():
     db.create_all()
 
+# ============ HELPERS ============
 def get_next_display_id():
     last = User.query.order_by(User.display_id.desc()).first()
     return last.display_id + 1 if last else 1001
@@ -84,30 +86,30 @@ def check_bind(at):
     except:
         return None
 
+# ============ FIXED: send_otp with maximum fallbacks ============
 def send_otp(access, email, otp_type="normal"):
-    """Send OTP with retry logic and multiple param formats"""
     try:
-        urls_params = []
-        if otp_type == "normal":
-            urls_params = [
-                ("https://chngemailcode48.vercel.app/send_otp", {'access_token': access, 'email': email}),
-            ]
-        elif otp_type == "current":
-            urls_params = [
+        if otp_type == "current":
+            attempts = [
                 ("https://chngeforgotcrownx72.vercel.app/otp", {'access_token': access, 'current_email': email}),
                 ("https://chngeforgotcrownx72.vercel.app/otp", {'access_token': access, 'email': email}),
+                ("https://chngemailcode48.vercel.app/send_otp", {'access_token': access, 'email': email}),
             ]
         elif otp_type == "new":
-            urls_params = [
+            attempts = [
                 ("https://chngeforgotcrownx72.vercel.app/newotp", {'access_token': access, 'new_email': email}),
                 ("https://chngeforgotcrownx72.vercel.app/newotp", {'access_token': access, 'email': email}),
+            ]
+        elif otp_type == "normal":
+            attempts = [
+                ("https://chngemailcode48.vercel.app/send_otp", {'access_token': access, 'email': email}),
             ]
         else:
             return False, None
         
-        for url, params in urls_params:
+        for url, params in attempts:
             try:
-                rsp = requests.get(url, params=params, timeout=15)
+                rsp = requests.get(url, params=params, timeout=20)
                 if is_success(rsp):
                     return True, rsp.json()
             except:
@@ -116,26 +118,29 @@ def send_otp(access, email, otp_type="normal"):
     except:
         return False, None
 
+# ============ FIXED: verify_otp with maximum fallbacks ============
 def verify_otp(access, email, otp, otp_type="normal"):
-    """Verify OTP with multiple param formats"""
     try:
-        urls_params = []
-        if otp_type == "normal":
-            urls_params = [("https://chngemailcode48.vercel.app/verify_otp", {'access_token': access, 'email': email, 'otp': otp})]
-        elif otp_type == "current":
-            urls_params = [
+        if otp_type == "current":
+            attempts = [
                 ("https://chngeforgotcrownx72.vercel.app/verify", {'access_token': access, 'current_email': email, 'otp': otp}),
                 ("https://chngeforgotcrownx72.vercel.app/verify", {'access_token': access, 'email': email, 'otp': otp}),
             ]
         elif otp_type == "new":
-            urls_params = [
+            attempts = [
                 ("https://chngeforgotcrownx72.vercel.app/newverify", {'access_token': access, 'new_email': email, 'otp': otp}),
                 ("https://chngeforgotcrownx72.vercel.app/newverify", {'access_token': access, 'email': email, 'otp': otp}),
             ]
+        elif otp_type == "normal":
+            attempts = [
+                ("https://chngemailcode48.vercel.app/verify_otp", {'access_token': access, 'email': email, 'otp': otp}),
+            ]
+        else:
+            return False, None
         
-        for url, params in urls_params:
+        for url, params in attempts:
             try:
-                rsp = requests.get(url, params=params, timeout=15)
+                rsp = requests.get(url, params=params, timeout=20)
                 if is_success(rsp):
                     data = rsp.json()
                     verifier = data.get("verifier_token") or data.get("data", {}).get("verifier_token")
@@ -170,8 +175,8 @@ def create_rebind(access, email, identity_token, verifier_token):
     except:
         return False, "Error"
 
+# ============ FIXED: change_email_no_sec - ab ACTUAL OTPs use hote hain ============
 def change_email_no_sec(access, cur_email, new_email, otp1, otp2):
-    """FIXED: Now uses actual OTPs from user input"""
     try:
         # Step 1: Send OTP to current email
         ok1, _ = send_otp(access, cur_email, "current")
@@ -206,7 +211,6 @@ def change_email_no_sec(access, cur_email, new_email, otp1, otp2):
         return False, f"Error: {str(e)}"
 
 def unbind_with_sec(access, sec_code):
-    """FIXED: Multiple param formats for unbind"""
     try:
         params_list = [
             {'access_token': access, 'security_code': sec_code},
@@ -225,17 +229,14 @@ def unbind_with_sec(access, sec_code):
         return False, "Error"
 
 def unbind_no_sec(access, cur_email, otp):
-    """FIXED: Unbind using OTP with actual user OTP"""
     try:
         ok1, _ = send_otp(access, cur_email, "current")
         if not ok1:
             return False, "Failed to send OTP to current email"
         time.sleep(1)
-        
         ok2, identity = verify_otp(access, cur_email, otp, "current")
         if not ok2 or not identity:
             return False, "Invalid OTP"
-        
         rsp = requests.get("https://crownxforgotremove23.vercel.app/forgotunbind", 
             params={'access_token': access, 'identity_token': identity}, timeout=15)
         if is_success(rsp):
@@ -265,13 +266,26 @@ def cancel_bind(access):
         return False, "Error"
 
 
-# ============ HTML (Single line templates for speed - using external CSS) ============
-CSS = "<style>*{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}body{background:#0a0a0a;min-height:100vh;color:#ff6666;display:flex;justify-content:center;align-items:center;padding:20px}.card{background:rgba(10,10,10,0.95);backdrop-filter:blur(20px);border-radius:30px;padding:40px;max-width:500px;width:100%;border:1px solid #ff000044}.card h1{font-size:22px;color:#ff0000;text-align:center;margin-bottom:25px}.input-group{margin-bottom:18px}.input-group label{display:block;color:#ff000088;font-size:11px;margin-bottom:6px;text-transform:uppercase}.input-group input{width:100%;padding:12px 16px;background:rgba(255,0,0,0.04);border:1px solid #ff000033;border-radius:12px;color:#ff6666;font-size:14px;transition:.3s}.input-group input:focus{outline:none;border-color:#ff0000}.btn{width:100%;padding:12px;background:linear-gradient(135deg,#ff0000,#cc0000);border:none;border-radius:12px;color:#0a0a0a;font-weight:bold;cursor:pointer;font-size:15px;transition:.3s}.btn:hover{transform:translateY(-2px);box-shadow:0 10px 40px rgba(255,0,0,0.3)}.error{background:rgba(255,0,0,0.15);border:1px solid #ff000066;border-radius:12px;padding:12px;margin-bottom:20px;text-align:center;color:#ff6666;font-size:12px}.success{background:rgba(0,255,0,0.1);border:1px solid #00ff0066;border-radius:12px;padding:12px;margin-bottom:20px;text-align:center;color:#66ff66;font-size:12px}.back-link{display:block;text-align:center;margin-top:20px;color:#ff000088;text-decoration:none;font-size:12px}.back-link:hover{color:#ff0000}</style>"
-
-LOGO = "<div class='card'><div style='text-align:center;margin-bottom:25px'><h1 style='font-size:32px;background:linear-gradient(135deg,#ff0000,#cc0000);-webkit-background-clip:text;-webkit-text-fill-color:transparent'>ERROR X</h1><p style='color:#ff000088;font-size:13px'>BIND TOOL</p></div>"
-
-INDEX_HTML = f"<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>ERROR X</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'>{LOGO}<p style='color:#ff000088;text-align:center;font-size:12px;margin-bottom:25px'>ENTER ACCESS KEY</p>{{% if error %}}<div class='error'>{{{{ error }}}}</div>{{% endif %}}<form method='POST' action='/login'><div class='input-group'><label>ACCESS KEY</label><input type='password' name='key' placeholder='ENTER ACCESS KEY' required autofocus></div><button type='submit' class='btn'>ACCESS</button></form><div style='text-align:center;margin-top:25px;font-size:10px;color:#ff000044'><a href='https://t.me/Errorzlive' style='color:#ff000088;text-decoration:none'>SUPPORT</a><br><br>DEVELOPER - @Errorzlive</div></div></div></body></html>"
-
+# ============ CSS with background image ============
+CSS = """<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}
+body{min-height:100vh;display:flex;justify-content:center;align-items:center;padding:20px;position:relative;overflow:auto}
+body::before{content:'';position:fixed;top:0;left:0;width:100%;height:100%;background:url('https://i.ibb.co/C3rBq6cV/photo-AQADQBBr-Gx-m-GFZ9.jpg');background-size:cover;background-position:center;background-repeat:no-repeat;opacity:0.15;z-index:-1;pointer-events:none}
+.card{background:rgba(10,10,10,0.92);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-radius:30px;padding:40px;max-width:500px;width:100%;border:1px solid #ff000066;box-shadow:0 0 60px rgba(255,0,0,0.1);position:relative;z-index:1}
+.card h1{font-size:22px;color:#ff0000;text-align:center;margin-bottom:25px}
+.input-group{margin-bottom:18px}
+.input-group label{display:block;color:#ff000088;font-size:11px;margin-bottom:6px;text-transform:uppercase;letter-spacing:1px}
+.input-group input,.input-group select{width:100%;padding:12px 16px;background:rgba(255,0,0,0.04);border:1px solid #ff000033;border-radius:12px;color:#ff6666;font-size:14px;transition:.3s}
+.input-group input:focus{outline:none;border-color:#ff0000;box-shadow:0 0 20px rgba(255,0,0,0.1)}
+.btn{width:100%;padding:12px;background:linear-gradient(135deg,#ff0000,#cc0000);border:none;border-radius:12px;color:#0a0a0a;font-weight:bold;cursor:pointer;font-size:15px;transition:.3s;letter-spacing:1px}
+.btn:hover{transform:translateY(-2px);box-shadow:0 10px 40px rgba(255,0,0,0.3)}
+.error{background:rgba(255,0,0,0.15);border:1px solid #ff000066;border-radius:12px;padding:12px;margin-bottom:20px;text-align:center;color:#ff6666;font-size:12px}
+.success{background:rgba(0,255,0,0.1);border:1px solid #00ff0066;border-radius:12px;padding:12px;margin-bottom:20px;text-align:center;color:#66ff66;font-size:12px}
+.back-link{display:block;text-align:center;margin-top:20px;color:#ff000088;text-decoration:none;font-size:12px;letter-spacing:1px}
+.back-link:hover{color:#ff0000}
+.logo-text{font-size:32px;background:linear-gradient(135deg,#ff0000,#cc0000);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;margin-bottom:5px}
+.sub-text{color:#ff000088;text-align:center;font-size:12px;margin-bottom:25px;letter-spacing:2px}
+</style>"""
 
 # ============ ROUTES ============
 
@@ -279,7 +293,7 @@ INDEX_HTML = f"<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='view
 def index():
     if 'user_id' in session:
         return redirect('/dashboard')
-    return render_template_string(INDEX_HTML)
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>ERROR X BIND</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><div style='text-align:center'><div class='logo-text' style='font-weight:900'>ERROR X</div><p class='sub-text'>BIND TOOL</p></div><p class='sub-text'>ENTER ACCESS KEY</p>{{% if error %}}<div class='error'>{{{{ error }}}}</div>{{% endif %}}<form method='POST' action='/login'><div class='input-group'><label>ACCESS KEY</label><input type='password' name='key' placeholder='ENTER ACCESS KEY' required autofocus></div><button type='submit' class='btn'>ACCESS</button></form><div style='text-align:center;margin-top:25px;font-size:10px;color:#ff000044'><a href='https://t.me/Errorzlive' style='color:#ff000088;text-decoration:none'>SUPPORT</a><a href='/admin-login' style='display:block;padding:12px;margin-top:10px;background:rgba(255,0,0,0.08);border:1px solid #ff000044;border-radius:12px;color:#ff000088;text-align:center;text-decoration:none;font-size:13px'>ADMIN PANEL</a><br><br>DEVELOPER - @Errorzlive</div></div></div></body></html>"""
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -321,7 +335,43 @@ def dashboard():
     else:
         b_html = "<div class='info-row'><span class='label'>Enter Access Token to fetch info:</span></div><form method='POST' action='/set-token' style='margin-top:15px;display:flex;gap:10px'><input type='text' name='access_token' placeholder='Enter Access Token' style='flex:1;padding:12px;background:rgba(255,0,0,0.04);border:1px solid #ff000033;border-radius:12px;color:#ff6666'><button type='submit' style='padding:12px 25px;background:linear-gradient(135deg,#ff0000,#cc0000);border:none;border-radius:12px;color:#0a0a0a;font-weight:bold;cursor:pointer'>FETCH</button></form>"
     
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>ERROR X</title><style>*{{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}}body{{background:#0a0a0a;min-height:100vh;color:#ff6666}}.navbar{{background:rgba(10,10,10,0.95);padding:15px 25px;display:flex;justify-content:space-between;border-bottom:1px solid #ff000033}}.navbar h1{{font-size:20px;color:#ff0000}}.nav-right .id-badge{{color:#ff000088;font-size:11px;border:1px solid #ff000033;padding:4px 14px;border-radius:20px}}.container{{padding:30px;max-width:900px;margin:0 auto}}.info-card{{background:rgba(255,0,0,0.03);border-radius:20px;padding:25px;border:1px solid #ff000022;margin-bottom:30px}}.info-card h2{{font-size:16px;color:#ff0000;margin-bottom:15px}}.info-row{{padding:8px 0;border-bottom:1px solid rgba(255,0,0,0.08);display:flex;justify-content:space-between;font-size:13px}}.info-row .label{{color:#ff000088}}.info-row .value{{color:#ff6666;font-weight:bold}}.btn-red{{padding:12px 25px;background:linear-gradient(135deg,#ff0000,#cc0000);border:none;border-radius:12px;color:#0a0a0a;font-weight:bold;cursor:pointer;text-decoration:none;display:inline-block}}.footer{{text-align:center;margin-top:40px;font-size:10px;color:#ff000044;padding:15px}}</style></head><body><div class='navbar'><h1>ERROR X</h1><div class='nav-right'><span class='id-badge'>ID: {user.display_id}</span></div></div><div class='container'><div class='info-card'><h2>RECOVERY MAIL INFO</h2>{b_html}</div><div style='display:grid;grid-template-columns:1fr 1fr;gap:10px'><a href='/check-bind' class='btn-red' style='text-align:center'>CHECK MAIL</a><a href='/change-email-sec' class='btn-red' style='text-align:center'>CHANGE (SEC)</a><a href='/change-email-otp' class='btn-red' style='text-align:center'>CHANGE (OTP)</a><a href='/unbind' class='btn-red' style='text-align:center'>UNBIND</a><a href='/revoke' class='btn-red' style='text-align:center'>REVOKE</a><a href='/cancel-bind' class='btn-red' style='text-align:center'>CANCEL</a></div><div style='margin-top:20px;text-align:center'><a href='https://t.me/Errorzlive' class='btn-red' style='text-align:center;background:transparent;border:1px solid #ff000044;color:#ff6666'>TELEGRAM</a><a href='/logout' class='btn-red' style='text-align:center;background:transparent;border:1px solid #ff000044;color:#ff6666;margin-left:10px'>LOGOUT</a></div></div><div class='footer'>DEVELOPER - @Errorzlive</div></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>ERROR X</title><style>
+*{{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}}
+body{{background:#0a0a0a;min-height:100vh;color:#ff6666}}
+body::before{{content:'';position:fixed;top:0;left:0;width:100%;height:100%;background:url('https://i.ibb.co/C3rBq6cV/photo-AQADQBBr-Gx-m-GFZ9.jpg');background-size:cover;background-position:center;opacity:0.06;z-index:-1;pointer-events:none}}
+.navbar{{background:rgba(10,10,10,0.95);padding:15px 25px;display:flex;justify-content:space-between;border-bottom:1px solid #ff000033;position:sticky;top:0;z-index:100}}
+.navbar h1{{font-size:20px;color:#ff0000}}
+.nav-right .id-badge{{color:#ff000088;font-size:11px;border:1px solid #ff000033;padding:4px 14px;border-radius:20px}}
+.container{{padding:30px;max-width:900px;margin:0 auto}}
+.info-card{{background:rgba(10,10,10,0.92);backdrop-filter:blur(20px);border-radius:20px;padding:25px;border:1px solid #ff000022;margin-bottom:30px}}
+.info-card h2{{font-size:16px;color:#ff0000;margin-bottom:15px}}
+.info-row{{padding:8px 0;border-bottom:1px solid rgba(255,0,0,0.08);display:flex;justify-content:space-between;font-size:13px}}
+.info-row .label{{color:#ff000088}}
+.info-row .value{{color:#ff6666;font-weight:bold}}
+.btn-red{{padding:12px 25px;background:linear-gradient(135deg,#ff0000,#cc0000);border:none;border-radius:12px;color:#0a0a0a;font-weight:bold;cursor:pointer;text-decoration:none;display:inline-block;text-align:center;font-size:13px;transition:.3s}}
+.btn-red:hover{{transform:translateY(-2px);box-shadow:0 10px 40px rgba(255,0,0,0.3)}}
+.btn-ghost{{padding:12px 25px;background:transparent;border:1px solid #ff000044;border-radius:12px;color:#ff6666;cursor:pointer;text-decoration:none;display:inline-block;text-align:center;font-size:13px;transition:.3s}}
+.btn-ghost:hover{{background:rgba(255,0,0,0.08);border-color:#ff0000}}
+.footer{{text-align:center;margin-top:40px;font-size:10px;color:#ff000044;padding:15px}}
+</style></head><body>
+<div class='navbar'><h1>ERROR X</h1><div class='nav-right'><span class='id-badge'>ID: {user.display_id}</span></div></div>
+<div class='container'>
+<div class='info-card'><h2>RECOVERY MAIL INFO</h2>{b_html}</div>
+<div style='display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px'>
+<a href='/check-bind' class='btn-red'>CHECK MAIL</a>
+<a href='/change-email-sec' class='btn-red'>CHANGE (SEC)</a>
+<a href='/change-email-otp' class='btn-red'>CHANGE (OTP)</a>
+<a href='/unbind' class='btn-red'>UNBIND</a>
+<a href='/revoke' class='btn-red'>REVOKE</a>
+<a href='/cancel-bind' class='btn-red'>CANCEL</a>
+</div>
+<div style='margin-top:20px;text-align:center'>
+<a href='https://t.me/Errorzlive' class='btn-ghost'>TELEGRAM</a>
+<a href='/logout' class='btn-ghost' style='margin-left:10px'>LOGOUT</a>
+</div>
+</div>
+<div class='footer'>DEVELOPER - @Errorzlive</div>
+</body></html>"""
 
 @app.route('/set-token', methods=['POST'])
 def set_token():
@@ -350,10 +400,11 @@ def check_bind_route():
     
     b_html = ""
     if bind_data:
-        b_html = f"<div class='success' style='text-align:left'><div><strong>STATUS:</strong> {bind_data['status']}</div><div><strong>CURRENT EMAIL:</strong> {bind_data['current_email']}</div><div><strong>PENDING EMAIL:</strong> {bind_data['pending_email']}</div><div><strong>EMAIL TO BE:</strong> {bind_data['email_to_be']}</div><div><strong>COUNTDOWN:</strong> {bind_data['countdown']}</div></div>"
+        b_html = f"<div class='success' style='text-align:left'><div><strong>STATUS:</strong> {bind_data['status']}</div><div><strong>CURRENT:</strong> {bind_data['current_email']}</div><div><strong>PENDING:</strong> {bind_data['pending_email']}</div><div><strong>TO BE:</strong> {bind_data['email_to_be']}</div><div><strong>TIMER:</strong> {bind_data['countdown']}</div></div>"
     
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Check Bind</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHECK MAIL</h1>{'<div class=error>'+err+'</div>' if err else ''}{b_html}<form method='POST' action='/check-bind'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' placeholder='Enter Access Token' required></div><button type='submit' class='btn'>CHECK</button></form><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Check Bind</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHECK RECOVERY MAIL</h1>{'<div class=error>'+err+'</div>' if err else ''}{b_html}<form method='POST' action='/check-bind'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' placeholder='Enter Access Token' required></div><button type='submit' class='btn'>CHECK</button></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
 
+# ============ FIXED: Change Email With SEC ============
 @app.route('/change-email-sec', methods=['GET', 'POST'])
 def change_email_sec_route():
     if 'user_id' not in session:
@@ -375,9 +426,9 @@ def change_email_sec_route():
                 if not ok:
                     err = "Failed to send OTP to new email!"
                 else:
-                    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Verify OTP</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>VERIFY OTP</h1><p style='color:#ff000088;text-align:center;font-size:13px;margin-bottom:20px'>OTP sent to {new_email}</p><form method='POST' action='/change-email-sec-otp'><div class='input-group'><label>OTP CODE</label><input type='text' name='otp_new' placeholder='Enter OTP' required></div><button type='submit' class='btn'>VERIFY & CHANGE</button><input type='hidden' name='access_token' value='{access}'><input type='hidden' name='current_email' value='{current_email}'><input type='hidden' name='new_email' value='{new_email}'><input type='hidden' name='sec_code' value='{sec_code}'></form><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+                    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Verify OTP</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>VERIFY OTP FOR NEW EMAIL</h1><p style='color:#ff000088;text-align:center;font-size:13px;margin-bottom:20px'>OTP sent to {new_email}</p><form method='POST' action='/change-email-sec-otp'><div class='input-group'><label>OTP CODE (NEW EMAIL)</label><input type='text' name='otp_new' placeholder='Enter OTP from New Email' required></div><button type='submit' class='btn'>VERIFY & CHANGE</button><input type='hidden' name='access_token' value='{access}'><input type='hidden' name='current_email' value='{current_email}'><input type='hidden' name='new_email' value='{new_email}'><input type='hidden' name='sec_code' value='{sec_code}'></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
     
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Change Email</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (SEC)</h1>{'<div class=error>'+err+'</div>' if err else ''}<form method='POST' action='/change-email-sec'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' required></div><div class='input-group'><label>CURRENT EMAIL</label><input type='email' name='current_email' required></div><div class='input-group'><label>SECURITY CODE</label><input type='text' name='sec_code' required></div><div class='input-group'><label>NEW EMAIL</label><input type='email' name='new_email' required></div><button type='submit' class='btn'>SEND OTP</button></form><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Change Email</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (WITH SECURITY CODE)</h1>{'<div class=error>'+err+'</div>' if err else ''}<form method='POST' action='/change-email-sec'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' placeholder='Enter Access Token' required></div><div class='input-group'><label>CURRENT BIND EMAIL</label><input type='email' name='current_email' placeholder='Enter Current Bound Email' required></div><div class='input-group'><label>SECURITY CODE</label><input type='text' name='sec_code' placeholder='Enter Security Code' required></div><div class='input-group'><label>NEW EMAIL</label><input type='email' name='new_email' placeholder='Enter New Email' required></div><button type='submit' class='btn'>SEND OTP TO NEW EMAIL</button></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
 
 @app.route('/change-email-sec-otp', methods=['POST'])
 def change_email_sec_otp_route():
@@ -392,65 +443,85 @@ def change_email_sec_otp_route():
     
     success, verifier = verify_otp(access, new_email, otp_new, "new")
     if not success:
-        return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Verify OTP</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>VERIFY OTP</h1><div class='error'>Invalid OTP for new email!</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+        return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>VERIFY OTP</h1><div class='error'>Invalid OTP for new email!</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
     
     ok, identity = verify_identity(access, sec_code)
     if not ok:
-        return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Verify OTP</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>VERIFY OTP</h1><div class='error'>Security code verification failed!</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+        return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>VERIFY OTP</h1><div class='error'>Security code verification failed!</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
     
     done, msg = create_rebind(access, new_email, identity, verifier)
     if done:
-        send_to_telegram(f"✅ EMAIL CHANGED\nNew Email: {new_email}")
-        return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Success</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>SUCCESS</h1><div class='success'>Email changed to {new_email}!</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>{msg}</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+        send_to_telegram(f"✅ EMAIL CHANGED (SEC)\nNew Email: {new_email}")
+        return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Success</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>SUCCESS</h1><div class='success'>Email changed to {new_email}!</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>{msg}</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
 
+# ============ FIXED: Change Email With OTP ============
 @app.route('/change-email-otp', methods=['GET', 'POST'])
 def change_email_otp_route():
     if 'user_id' not in session:
         return redirect('/')
+    
     if request.method == 'POST':
         step = int(request.form.get('step', 1))
+        
+        # STEP 1: Send OTP to current email
         if step == 1:
             access = request.form.get('access_token')
             cur = request.form.get('current_email')
             if not access or not cur:
-                return redirect('/change-email-otp')
-            ok, _ = send_otp(access, cur, "current")
+                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Change Email</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (WITH OTP)</h1><div class='error'>Access Token and Current Email required!</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+            
+            ok, resp = send_otp(access, cur, "current")
             if not ok:
-                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Change Email</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (OTP)</h1><div class='error'>Failed to send OTP!</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
-            return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Step 2</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>STEP 2 - VERIFY CURRENT EMAIL</h1><form method='POST' action='/change-email-otp'><div class='input-group'><label>OTP (CURRENT EMAIL)</label><input type='text' name='otp1' required></div><div class='input-group'><label>NEW EMAIL</label><input type='email' name='new_email' required></div><button type='submit' class='btn'>VERIFY & NEXT</button><input type='hidden' name='step' value='2'><input type='hidden' name='access_token' value='{access}'><input type='hidden' name='current_email' value='{cur}'></form><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Change Email</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (WITH OTP)</h1><div class='error'>FAILED TO SEND OTP TO CURRENT EMAIL!<br><span style='font-size:10px;color:#ff000066'>Try again or use different access token</span></div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+            
+            return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Step 2</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (WITH OTP)</h1><div style='text-align:center;color:#ff000066;font-size:11px;margin-bottom:20px'>STEP 2 OF 3 - VERIFY CURRENT EMAIL</div><p style='color:#00ff0088;text-align:center;font-size:12px;margin-bottom:20px'>✓ OTP sent to your current email!</p><form method='POST' action='/change-email-otp'><div class='input-group'><label>OTP CODE (CURRENT EMAIL)</label><input type='text' name='otp1' placeholder='Enter OTP from Current Email' required></div><div class='input-group'><label>NEW EMAIL</label><input type='email' name='new_email' placeholder='Enter New Email' required></div><button type='submit' class='btn'>VERIFY & SEND OTP TO NEW EMAIL</button><input type='hidden' name='step' value='2'><input type='hidden' name='access_token' value='{access}'><input type='hidden' name='current_email' value='{cur}'></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+        
+        # STEP 2: Verify current email OTP, send OTP to new email
         elif step == 2:
             access = request.form.get('access_token')
             cur = request.form.get('current_email')
             otp1 = request.form.get('otp1')
             new = request.form.get('new_email')
+            
             if not all([access, cur, otp1, new]):
-                return redirect('/change-email-otp')
-            # Verify current OTP
-            ok2, _ = verify_otp(access, cur, otp1, "current")
+                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>All fields required!</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+            
+            # Verify current email OTP
+            ok2, identity = verify_otp(access, cur, otp1, "current")
             if not ok2:
-                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>Invalid OTP for current email!</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>INVALID OTP FOR CURRENT EMAIL!<br><span style='font-size:10px;color:#ff000066'>Check OTP and try again</span></div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+            
             # Send OTP to new email
             ok3, _ = send_otp(access, new, "new")
             if not ok3:
-                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>Failed to send OTP to new email!</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
-            return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Step 3</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>STEP 3 - VERIFY NEW EMAIL</h1><p style='color:#ff000088;text-align:center;font-size:13px;margin-bottom:20px'>OTP sent to {new}</p><form method='POST' action='/change-email-otp'><div class='input-group'><label>OTP (NEW EMAIL)</label><input type='text' name='otp2' required></div><button type='submit' class='btn'>CONFIRM & CHANGE</button><input type='hidden' name='step' value='3'><input type='hidden' name='access_token' value='{access}'><input type='hidden' name='current_email' value='{cur}'><input type='hidden' name='new_email' value='{new}'><input type='hidden' name='otp1' value='{otp1}'></form><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>Failed to send OTP to new email!</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+            
+            return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Step 3</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (WITH OTP)</h1><div style='text-align:center;color:#ff000066;font-size:11px;margin-bottom:20px'>STEP 3 OF 3 - VERIFY NEW EMAIL</div><p style='color:#00ff0088;text-align:center;font-size:12px;margin-bottom:20px'>✓ OTP sent to {new}</p><form method='POST' action='/change-email-otp'><div class='input-group'><label>OTP CODE (NEW EMAIL)</label><input type='text' name='otp2' placeholder='Enter OTP from New Email' required></div><button type='submit' class='btn'>CONFIRM & CHANGE</button><input type='hidden' name='step' value='3'><input type='hidden' name='access_token' value='{access}'><input type='hidden' name='current_email' value='{cur}'><input type='hidden' name='new_email' value='{new}'><input type='hidden' name='otp1' value='{otp1}'></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+        
+        # STEP 3: Verify new email OTP and execute change - FIXED: actual OTPs use hote hain
         elif step == 3:
             access = request.form.get('access_token')
             cur = request.form.get('current_email')
             new = request.form.get('new_email')
             otp2 = request.form.get('otp2')
             otp1 = request.form.get('otp1')
+            
             if not all([access, cur, new, otp2, otp1]):
-                return redirect('/change-email-otp')
-            # FIXED: Using actual OTPs from user, not hardcoded
+                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>All fields required!</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+            
+            # FIXED: Actual OTPs (otp1, otp2) pass ho rahe hain, hardcoded nahi!
             success, msg = change_email_no_sec(access, cur, new, otp1, otp2)
             if success:
-                send_to_telegram(f"✅ EMAIL CHANGED (OTP)\nNew: {new}")
-                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Success</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>SUCCESS</h1><div class='success'>{msg}</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
-            return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>{msg}</div><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Change Email</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (OTP)</h1><div style='text-align:center;color:#ff000066;font-size:11px;margin-bottom:20px'>STEP 1 OF 3</div><form method='POST' action='/change-email-otp'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' required></div><div class='input-group'><label>CURRENT EMAIL</label><input type='email' name='current_email' required></div><button type='submit' class='btn'>SEND OTP</button><input type='hidden' name='step' value='1'></form><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+                send_to_telegram(f"✅ EMAIL CHANGED (OTP)\nFrom: {cur}\nTo: {new}")
+                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Success</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>SUCCESS</h1><div class='success'>{msg}</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+            else:
+                return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Error</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>ERROR</h1><div class='error'>{msg}</div><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
+    
+    # GET request - Step 1 form
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Change Email</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CHANGE MAIL (WITH OTP)</h1><div style='text-align:center;color:#ff000066;font-size:11px;margin-bottom:20px'>STEP 1 OF 3</div><form method='POST' action='/change-email-otp'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' placeholder='Enter Access Token' required></div><div class='input-group'><label>CURRENT BIND EMAIL</label><input type='email' name='current_email' placeholder='Enter Current Bound Email' required></div><button type='submit' class='btn'>SEND OTP TO CURRENT EMAIL</button><input type='hidden' name='step' value='1'></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
 
+# ============ FIXED: Unbind ============
 @app.route('/unbind', methods=['GET', 'POST'])
 def unbind_route():
     if 'user_id' not in session:
@@ -462,27 +533,30 @@ def unbind_route():
         sec_code = request.form.get('sec_code')
         cur_email = request.form.get('current_email')
         otp = request.form.get('otp')
+        method = request.form.get('method', 'sec')
+        
         if not access:
             err = "Access Token required!"
-        elif sec_code:
+        elif method == 'sec' and sec_code:
             ok, msg = unbind_with_sec(access, sec_code)
             if ok:
                 success_msg = msg
-                send_to_telegram(f"🔓 UNBIND (SEC)\nUser: {session.get('user_id')}")
+                send_to_telegram(f"🔓 UNBIND REQUEST (SEC)\nUser: {session.get('user_id')}")
             else:
                 err = msg
-        elif cur_email and otp:
+        elif method == 'otp' and cur_email and otp:
             ok, msg = unbind_no_sec(access, cur_email, otp)
             if ok:
                 success_msg = msg
-                send_to_telegram(f"🔓 UNBIND (OTP)\nUser: {session.get('user_id')}")
+                send_to_telegram(f"🔓 UNBIND REQUEST (OTP)\nUser: {session.get('user_id')}")
             else:
                 err = msg
         else:
-            err = "Provide Security Code OR Email+OTP"
+            err = "Please provide required fields for selected method!"
     
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Unbind</title>{CSS}</head><body><div style='width:100%;max-width:550px;padding:20px'><div class='card'><h1>UNBIND EMAIL</h1>{'<div class=error>'+err+'</div>' if err else ''}{'<div class=success>'+success_msg+'</div>' if success_msg else ''}<form method='POST' action='/unbind'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' required></div><div style='margin-bottom:15px'><label style='display:block;color:#ff000088;font-size:11px;margin-bottom:6px'>METHOD</label><select name='method' style='width:100%;padding:12px;background:rgba(255,0,0,0.04);border:1px solid #ff000033;border-radius:12px;color:#ff6666;font-size:14px' onchange='toggleMethod(this.value)'><option value='sec'>SECURITY CODE</option><option value='otp'>OTP</option></select></div><div id='secFields'><div class='input-group'><label>SECURITY CODE</label><input type='text' name='sec_code' placeholder='Enter Security Code'></div></div><div id='otpFields' style='display:none'><div class='input-group'><label>CURRENT EMAIL</label><input type='email' name='current_email' placeholder='Enter Current Email'></div><div class='input-group'><label>OTP CODE</label><input type='text' name='otp' placeholder='Enter OTP'></div></div><button type='submit' class='btn'>UNBIND</button></form><a href='/dashboard' class='back-link'>← BACK</a></div></div><script>function toggleMethod(v){{document.getElementById('secFields').style.display=v==='sec'?'block':'none';document.getElementById('otpFields').style.display=v==='otp'?'block':'none'}}</script></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Unbind</title>{CSS}</head><body><div style='width:100%;max-width:550px;padding:20px'><div class='card'><h1>UNBIND EMAIL</h1>{'<div class=error>'+err+'</div>' if err else ''}{'<div class=success>'+success_msg+'</div>' if success_msg else ''}<form method='POST' action='/unbind'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' placeholder='Enter Access Token' required></div><div style='margin-bottom:15px'><label style='display:block;color:#ff000088;font-size:11px;margin-bottom:6px;text-transform:uppercase'>METHOD</label><select name='method' style='width:100%;padding:12px;background:rgba(255,0,0,0.04);border:1px solid #ff000033;border-radius:12px;color:#ff6666;font-size:14px' onchange='toggleMethod(this.value)'><option value='sec'>SECURITY CODE</option><option value='otp'>OTP METHOD</option></select></div><div id='secFields'><div class='input-group'><label>SECURITY CODE</label><input type='text' name='sec_code' placeholder='Enter Security Code'></div></div><div id='otpFields' style='display:none'><div class='input-group'><label>CURRENT EMAIL</label><input type='email' name='current_email' placeholder='Enter Current Bound Email'></div><div class='input-group'><label>OTP CODE</label><input type='text' name='otp' placeholder='Enter OTP'></div></div><button type='submit' class='btn'>UNBIND</button></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div><script>function toggleMethod(v){{document.getElementById('secFields').style.display=v==='sec'?'block':'none';document.getElementById('otpFields').style.display=v==='otp'?'block':'none'}}</script></body></html>"""
 
+# ============ Revoke ============
 @app.route('/revoke', methods=['GET', 'POST'])
 def revoke_route():
     if 'user_id' not in session:
@@ -500,8 +574,9 @@ def revoke_route():
                 send_to_telegram(f"🔑 TOKEN REVOKED\nUser: {session.get('user_id')}")
             else:
                 err = msg
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Revoke</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>REVOKE TOKEN</h1>{'<div class=error>'+err+'</div>' if err else ''}{'<div class=success>'+success_msg+'</div>' if success_msg else ''}<form method='POST' action='/revoke'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' required></div><button type='submit' class='btn'>REVOKE</button></form><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Revoke</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>REVOKE TOKEN</h1>{'<div class=error>'+err+'</div>' if err else ''}{'<div class=success>'+success_msg+'</div>' if success_msg else ''}<form method='POST' action='/revoke'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' placeholder='Enter Access Token to Revoke' required></div><button type='submit' class='btn'>REVOKE</button></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
 
+# ============ Cancel Bind ============
 @app.route('/cancel-bind', methods=['GET', 'POST'])
 def cancel_bind_route():
     if 'user_id' not in session:
@@ -519,8 +594,9 @@ def cancel_bind_route():
                 send_to_telegram(f"❌ BIND CANCELLED\nUser: {session.get('user_id')}")
             else:
                 err = msg
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Cancel</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CANCEL BIND</h1>{'<div class=error>'+err+'</div>' if err else ''}{'<div class=success>'+success_msg+'</div>' if success_msg else ''}<form method='POST' action='/cancel-bind'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' required></div><button type='submit' class='btn'>CANCEL</button></form><a href='/dashboard' class='back-link'>← BACK</a></div></div></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Cancel Bind</title>{CSS}</head><body><div style='width:100%;max-width:500px;padding:20px'><div class='card'><h1>CANCEL BIND</h1>{'<div class=error>'+err+'</div>' if err else ''}{'<div class=success>'+success_msg+'</div>' if success_msg else ''}<form method='POST' action='/cancel-bind'><div class='input-group'><label>ACCESS TOKEN</label><input type='text' name='access_token' placeholder='Enter Access Token' required></div><button type='submit' class='btn'>CANCEL</button></form><a href='/dashboard' class='back-link'>← BACK TO DASHBOARD</a></div></div></body></html>"""
 
+# ============ Admin ============
 @app.route('/admin-login', methods=['GET', 'POST'])
 def admin_login():
     err = ""
@@ -529,7 +605,7 @@ def admin_login():
             session['admin'] = True
             return redirect('/admin')
         err = "INVALID ADMIN KEY!"
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Admin</title>{CSS}</head><body><div style='width:100%;max-width:450px;padding:20px'><div class='card'><h1>ADMIN PANEL</h1>{'<div class=error>'+err+'</div>' if err else ''}<form method='POST' action='/admin-login'><div class='input-group'><label>ADMIN KEY</label><input type='password' name='key' required></div><button type='submit' class='btn'>ACCESS</button></form><a href='/' class='back-link'>← HOME</a></div></div></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Admin</title>{CSS}</head><body><div style='width:100%;max-width:450px;padding:20px'><div class='card'><h1>ADMIN PANEL</h1>{'<div class=error>'+err+'</div>' if err else ''}<form method='POST' action='/admin-login'><div class='input-group'><label>ADMIN KEY</label><input type='password' name='key' placeholder='ENTER ADMIN KEY' required></div><button type='submit' class='btn'>ACCESS</button></form><a href='/' class='back-link'>← HOME</a></div></div></body></html>"""
 
 @app.route('/admin')
 def admin():
@@ -542,16 +618,20 @@ def admin():
     rows = ""
     for u in users:
         status = "ACTIVE" if not u.is_banned else "BANNED"
-        status_class = "color:#66ff66" if not u.is_banned else "color:#ff6666"
-        ban_btn = f"<form method='POST' action='/admin/ban' style='display:inline'><input type='hidden' name='user_id' value='{u.id}'><button style='background:#ff333355;border:none;padding:4px 12px;border-radius:6px;color:#ff6666;cursor:pointer'>BAN</button></form><form method='POST' action='/admin/ban-ip' style='display:inline;margin-left:4px'><input type='hidden' name='ip' value='{u.ip}'><button style='background:#ff880055;border:none;padding:4px 12px;border-radius:6px;color:#ff8866;cursor:pointer'>IP BAN</button></form>" if not u.is_banned else f"<form method='POST' action='/admin/unban' style='display:inline'><input type='hidden' name='user_id' value='{u.id}'><button style='background:#33ff3355;border:none;padding:4px 12px;border-radius:6px;color:#66ff66;cursor:pointer'>UNBAN</button></form>"
+        sc = "color:#66ff66" if not u.is_banned else "color:#ff6666"
+        btn = ""
+        if u.is_banned:
+            btn = f"<form method='POST' action='/admin/unban' style='display:inline'><input type='hidden' name='user_id' value='{u.id}'><button style='background:#33ff3355;border:none;padding:4px 12px;border-radius:6px;color:#66ff66;cursor:pointer'>UNBAN</button></form>"
+        else:
+            btn = f"<form method='POST' action='/admin/ban' style='display:inline'><input type='hidden' name='user_id' value='{u.id}'><button style='background:#ff333355;border:none;padding:4px 12px;border-radius:6px;color:#ff6666;cursor:pointer'>BAN</button></form><form method='POST' action='/admin/ban-ip' style='display:inline;margin-left:4px'><input type='hidden' name='ip' value='{u.ip}'><button style='background:#ff880055;border:none;padding:4px 12px;border-radius:6px;color:#ff8866;cursor:pointer'>IP BAN</button></form>"
         j = u.joined_at.strftime('%Y-%m-%d') if u.joined_at else '-'
-        rows += f"<tr><td>{u.display_id}</td><td>{(u.username or '-')[:20]}</td><td>{u.ip or '-'}</td><td>{(u.device or '-')[:25]}</td><td>{j}</td><td><span style='{status_class}'>{status}</span></td><td>{ban_btn}</td></tr>"
+        rows += f"<tr><td>{u.display_id}</td><td>{(u.username or '-')[:20]}</td><td>{u.ip or '-'}</td><td>{(u.device or '-')[:25]}</td><td>{j}</td><td><span style='{sc}'>{status}</span></td><td>{btn}</td></tr>"
     
     ip_rows = ""
     for b in banned_ips:
         ip_rows += f"<tr><td>{b.ip}</td><td>{b.banned_at.strftime('%Y-%m-%d %H:%M') if b.banned_at else '-'}</td><td><form method='POST' action='/admin/unban-ip'><input type='hidden' name='ip' value='{b.ip}'><button style='background:#33ff3355;border:none;padding:4px 12px;border-radius:6px;color:#66ff66;cursor:pointer'>UNBAN</button></form></td></tr>"
     
-    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Admin Panel</title><style>*{{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}}body{{background:#0a0a0a;color:#ff6666;padding:20px}}.navbar{{background:rgba(10,10,10,0.95);padding:15px 25px;display:flex;justify-content:space-between;border-bottom:1px solid #ff000033;margin-bottom:25px}}.navbar h1{{font-size:20px;color:#ff0000}}.navbar a{{color:#ff000088;text-decoration:none;padding:8px 16px;border:1px solid #ff000033;border-radius:8px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:25px}}.stat-card{{background:rgba(255,0,0,0.03);border:1px solid #ff000022;border-radius:15px;padding:20px;text-align:center}}.stat-card h3{{color:#ff000088;font-size:11px}}.stat-card .value{{color:#ff0000;font-size:28px;font-weight:bold}}table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:10px;text-align:left;border-bottom:1px solid #ff000011;color:#ff6666}}th{{color:#ff000088}}</style></head><body><div class='navbar'><h1>ADMIN PANEL</h1><a href='/logout'>LOGOUT</a></div><div class='stats'><div class='stat-card'><h3>TOTAL USERS</h3><div class='value'>{len(users)}</div></div><div class='stat-card'><h3>BANNED</h3><div class='value'>{banned_count}</div></div><div class='stat-card'><h3>BANNED IPS</h3><div class='value'>{len(banned_ips)}</div></div></div><div style='background:rgba(255,0,0,0.03);border-radius:15px;padding:20px;margin-bottom:20px;border:1px solid #ff000022;overflow-x:auto'><h2 style='color:#ff0000;font-size:16px;margin-bottom:15px'>USERS</h2><table><tr><th>ID</th><th>USER</th><th>IP</th><th>DEVICE</th><th>JOINED</th><th>STATUS</th><th>ACTION</th></tr>{rows}</table></div><div style='background:rgba(255,0,0,0.03);border-radius:15px;padding:20px;border:1px solid #ff000022;overflow-x:auto'><h2 style='color:#ff0000;font-size:16px;margin-bottom:15px'>BANNED IPS</h2><table><tr><th>IP</th><th>BANNED AT</th><th>ACTION</th></tr>{ip_rows}</table></div></body></html>"""
+    return f"""<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Admin Panel</title><style>*{{margin:0;padding:0;box-sizing:border-box;font-family:'Courier New',monospace}}body{{background:#0a0a0a;color:#ff6666;padding:20px}}.navbar{{background:rgba(10,10,10,0.95);padding:15px 25px;display:flex;justify-content:space-between;border-bottom:1px solid #ff000033;margin-bottom:25px}}.navbar h1{{font-size:20px;color:#ff0000}}.navbar a{{color:#ff000088;text-decoration:none;padding:8px 16px;border:1px solid #ff000033;border-radius:8px}}.stats{{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:25px}}.stat-card{{background:rgba(255,0,0,0.03);border:1px solid #ff000022;border-radius:15px;padding:20px;text-align:center}}.stat-card h3{{color:#ff000088;font-size:11px;letter-spacing:1px}}.stat-card .value{{color:#ff0000;font-size:28px;font-weight:bold}}.section{{background:rgba(255,0,0,0.03);border-radius:15px;padding:20px;margin-bottom:20px;border:1px solid #ff000022;overflow-x:auto}}.section h2{{color:#ff0000;font-size:16px;margin-bottom:15px}}table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:10px;text-align:left;border-bottom:1px solid #ff000011;color:#ff6666}}th{{color:#ff000088;letter-spacing:1px}}</style></head><body><div class='navbar'><h1>ADMIN PANEL</h1><a href='/logout'>LOGOUT</a></div><div class='stats'><div class='stat-card'><h3>TOTAL USERS</h3><div class='value'>{len(users)}</div></div><div class='stat-card'><h3>BANNED</h3><div class='value'>{banned_count}</div></div><div class='stat-card'><h3>BANNED IPS</h3><div class='value'>{len(banned_ips)}</div></div></div><div class='section'><h2>USERS</h2><table><tr><th>ID</th><th>USERNAME</th><th>IP</th><th>DEVICE</th><th>JOINED</th><th>STATUS</th><th>ACTION</th></tr>{rows}</table></div><div class='section'><h2>BANNED IPS</h2><table><tr><th>IP</th><th>BANNED AT</th><th>ACTION</th></tr>{ip_rows}</table></div></body></html>"""
 
 @app.route('/admin/ban', methods=['POST'])
 def admin_ban():
@@ -607,10 +687,10 @@ def logout():
 def health():
     return "OK", 200
 
-# WAF bypass - random path response to avoid port scan detection
+# WAF bypass
 @app.route('/<path:path>')
 def catch_all(path):
-    if path.startswith('admin') or path in ['login', 'dashboard']:
+    if path.startswith('admin') or path in ['login', 'dashboard', 'check-bind', 'unbind', 'revoke', 'cancel-bind']:
         return redirect('/')
     return "OK", 200
 
